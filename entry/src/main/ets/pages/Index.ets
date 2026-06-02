@@ -6,187 +6,292 @@ interface Point {
 @Entry
 @Component
 struct SnakeGame {
-  // 游戏配置
-  readonly GRID_SIZE: number = 20;
+  readonly GRID_SIZE: number = 16;
   readonly CELL_COUNT: number = 20;
-  readonly SPEED: number = 400; // 已调慢，可自行修改
+  readonly SPEED: number = 320;
 
-  // 游戏状态
   @State snake: Point[] = [];
   @State food: Point = { x: 0, y: 0 };
   @State dir: Point = { x: 1, y: 0 };
+  @State nextDir: Point = { x: 1, y: 0 };
   @State isGameOver: boolean = false;
+  @State isPaused: boolean = false;
   @State score: number = 0;
-  gameTimer: number | null = null;
+
+  private gameTimer: number | null = null;
+  private context: CanvasRenderingContext2D = new CanvasRenderingContext2D();
 
   build() {
-    Column() {
-      // 标题
-      Text(`贪吃蛇 分数：${this.score}`)
-        .fontSize(30)
-        .fontWeight(FontWeight.Bold)
-        .margin(15);
-
-      // 游戏结束
-      if (this.isGameOver) {
-        Column() {
-          Text("游戏结束")
-            .fontSize(40)
-            .fontColor(Color.Red);
-          Text("点击重新开始")
-            .fontSize(22);
-        }
-        .onClick(() => this.initGame())
-        .margin(10);
-      }
-
-      // 游戏画布（核心修复：用Canvas绘制，彻底消除黑线）
-      Canvas(this.context)
-        .width(this.GRID_SIZE * this.CELL_COUNT)
-        .height(this.GRID_SIZE * this.CELL_COUNT)
-        .backgroundColor('#f5f5f5')
-        .border({ width: 2, color: '#333' })
-        .onAreaChange(() => {
-          this.drawGame(); // 区域变化时重绘
-        });
-
-      // 方向按钮
-      Column({ space: 5 }) {
-        Button("↑")
-          .width(60)
-          .height(60)
-          .onClick(() => this.setDirection(0, -1));
-        Row({ space: 20 }) {
-          Button("←")
-            .width(60)
-            .height(60)
-            .onClick(() => this.setDirection(-1, 0));
-          Button("→")
-            .width(60)
-            .height(60)
-            .onClick(() => this.setDirection(1, 0));
-        }
-        Button("↓")
-          .width(60)
-          .height(60)
-          .onClick(() => this.setDirection(0, 1));
-      }
-      .margin(20);
+    Column({ space: 10 }) {
+      this.Header()
+      this.GameBoard()
+      this.ControlPanel()
     }
     .width('100%')
-    .padding(10)
+    .height('100%')
+    .padding({ left: 18, right: 18, top: 14, bottom: 10 })
+    .backgroundColor('#F3F7FB')
     .onKeyEvent((event: KeyEvent) => {
-      if (event.keyCode === 2001) this.setDirection(0, -1);
-      else if (event.keyCode === 2002) this.setDirection(0, 1);
-      else if (event.keyCode === 2003) this.setDirection(-1, 0);
-      else if (event.keyCode === 2004) this.setDirection(1, 0);
+      if (event.keyCode === 2001) {
+        this.setDirection(0, -1);
+      } else if (event.keyCode === 2002) {
+        this.setDirection(0, 1);
+      } else if (event.keyCode === 2003) {
+        this.setDirection(-1, 0);
+      } else if (event.keyCode === 2004) {
+        this.setDirection(1, 0);
+      }
     })
-    .onAppear(() => this.initGame())
+    .onAppear(() => {
+      if (this.snake.length === 0) {
+        this.initGame();
+      } else if (!this.isGameOver && !this.isPaused) {
+        this.startGame();
+      }
+      this.drawGame();
+    })
     .onDisAppear(() => this.stopGame());
   }
 
-  // Canvas上下文
-  private context: CanvasRenderingContext2D = new CanvasRenderingContext2D();
+  @Builder
+  private Header() {
+    Column({ space: 8 }) {
+      Text('贪吃蛇')
+        .fontSize(30)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#162033')
 
-  // 绘制游戏画面（核心修复逻辑）
+      Row() {
+        this.InfoBlock('分数', `${this.score}`)
+        this.InfoBlock('速度', `${this.SPEED}ms`)
+        this.InfoBlock('状态', this.statusText())
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.SpaceBetween)
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private InfoBlock(label: string, value: string) {
+    Column({ space: 4 }) {
+      Text(label)
+        .fontSize(12)
+        .fontColor('#6C778A')
+      Text(value)
+        .fontSize(18)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#1677FF')
+    }
+    .width('31%')
+    .height(56)
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(Color.White)
+    .borderRadius(8)
+  }
+
+  @Builder
+  private GameBoard() {
+    Stack({ alignContent: Alignment.Center }) {
+      Canvas(this.context)
+        .width(this.GRID_SIZE * this.CELL_COUNT)
+        .height(this.GRID_SIZE * this.CELL_COUNT)
+        .backgroundColor('#FFFFFF')
+        .border({ width: 2, color: '#25324A' })
+        .borderRadius(8)
+        .onAreaChange(() => {
+          this.drawGame();
+        })
+
+      if (this.isGameOver || this.isPaused) {
+        Column({ space: 8 }) {
+          Text(this.isGameOver ? '游戏结束' : '已暂停')
+            .fontSize(30)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.isGameOver ? '#D93026' : '#1677FF')
+          Text(this.isGameOver ? '点击重新开始再挑战一次' : '点击继续回到当前局')
+            .fontSize(15)
+            .fontColor('#5E6675')
+        }
+        .width(238)
+        .padding(14)
+        .backgroundColor(Color.White)
+        .borderRadius(8)
+      }
+    }
+    .width('100%')
+    .height(this.GRID_SIZE * this.CELL_COUNT + 4)
+  }
+
+  @Builder
+  private ControlPanel() {
+    Column({ space: 10 }) {
+      Row({ space: 10 }) {
+        Button(this.isPaused ? '继续' : '暂停')
+          .width(112)
+          .height(40)
+          .enabled(!this.isGameOver)
+          .onClick(() => {
+            if (this.isPaused) {
+              this.resumeGame();
+            } else {
+              this.pauseGame();
+            }
+          })
+
+        Button('重新开始')
+          .width(112)
+          .height(40)
+          .backgroundColor('#25324A')
+          .onClick(() => this.initGame())
+      }
+
+      Column({ space: 6 }) {
+        this.DirectionButton('↑', 0, -1)
+        Row({ space: 22 }) {
+          this.DirectionButton('←', -1, 0)
+          this.DirectionButton('→', 1, 0)
+        }
+        this.DirectionButton('↓', 0, 1)
+      }
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private DirectionButton(label: string, x: number, y: number) {
+    Button(label)
+      .width(68)
+      .height(52)
+      .fontSize(24)
+      .backgroundColor('#1677FF')
+      .enabled(!this.isGameOver)
+      .onClick(() => this.setDirection(x, y))
+  }
+
+  private statusText(): string {
+    if (this.isGameOver) {
+      return '结束';
+    }
+    if (this.isPaused) {
+      return '暂停';
+    }
+    return '进行中';
+  }
+
   private drawGame(): void {
     const ctx = this.context;
-    // 清空画布
-    ctx.clearRect(0, 0, this.GRID_SIZE * this.CELL_COUNT, this.GRID_SIZE * this.CELL_COUNT);
+    const boardSize = this.GRID_SIZE * this.CELL_COUNT;
+    ctx.clearRect(0, 0, boardSize, boardSize);
 
-    // 1. 绘制背景网格（无黑线版本）
-    ctx.strokeStyle = '#e0e0e0';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, boardSize, boardSize);
+
+    ctx.strokeStyle = '#E8EDF3';
     ctx.lineWidth = 1;
     for (let i = 0; i <= this.CELL_COUNT; i++) {
-      // 竖线
       ctx.beginPath();
       ctx.moveTo(i * this.GRID_SIZE, 0);
-      ctx.lineTo(i * this.GRID_SIZE, this.CELL_COUNT * this.GRID_SIZE);
+      ctx.lineTo(i * this.GRID_SIZE, boardSize);
       ctx.stroke();
-      // 横线
+
       ctx.beginPath();
       ctx.moveTo(0, i * this.GRID_SIZE);
-      ctx.lineTo(this.CELL_COUNT * this.GRID_SIZE, i * this.GRID_SIZE);
+      ctx.lineTo(boardSize, i * this.GRID_SIZE);
       ctx.stroke();
     }
 
-    // 2. 绘制蛇身
     this.snake.forEach((p, index) => {
-      ctx.fillStyle = index === 0 ? '#0066CC' : '#33CC33';
+      ctx.fillStyle = index === 0 ? '#1677FF' : '#38C172';
       ctx.fillRect(
-        p.x * this.GRID_SIZE + 1, // +1 避开网格线
-        p.y * this.GRID_SIZE + 1,
-        this.GRID_SIZE - 2, // -2 留出网格线空间
-        this.GRID_SIZE - 2
+        p.x * this.GRID_SIZE + 2,
+        p.y * this.GRID_SIZE + 2,
+        this.GRID_SIZE - 4,
+        this.GRID_SIZE - 4
       );
     });
 
-    // 3. 绘制食物
-    ctx.fillStyle = '#FF3333';
+    ctx.fillStyle = '#F04438';
     ctx.fillRect(
-      this.food.x * this.GRID_SIZE + 1,
-      this.food.y * this.GRID_SIZE + 1,
-      this.GRID_SIZE - 2,
-      this.GRID_SIZE - 2
+      this.food.x * this.GRID_SIZE + 3,
+      this.food.y * this.GRID_SIZE + 3,
+      this.GRID_SIZE - 6,
+      this.GRID_SIZE - 6
     );
   }
 
-  // 初始化游戏
-  initGame(): void {
+  private initGame(): void {
     this.snake = [
       { x: 8, y: 10 },
       { x: 7, y: 10 },
       { x: 6, y: 10 }
     ];
     this.dir = { x: 1, y: 0 };
+    this.nextDir = { x: 1, y: 0 };
     this.score = 0;
     this.isGameOver = false;
+    this.isPaused = false;
     this.randomFood();
+    this.drawGame();
     this.startGame();
   }
 
-  // 开始循环
-  startGame(): void {
+  private startGame(): void {
     this.stopGame();
     this.gameTimer = setInterval(() => {
       this.moveSnake();
-      this.drawGame(); // 每次移动后重绘
+      this.drawGame();
     }, this.SPEED);
   }
 
-  // 停止游戏
-  stopGame(): void {
-    if (this.gameTimer) {
+  private pauseGame(): void {
+    if (this.isGameOver) {
+      return;
+    }
+    this.isPaused = true;
+    this.stopGame();
+  }
+
+  private resumeGame(): void {
+    if (this.isGameOver) {
+      return;
+    }
+    this.isPaused = false;
+    this.startGame();
+  }
+
+  private stopGame(): void {
+    if (this.gameTimer !== null) {
       clearInterval(this.gameTimer);
       this.gameTimer = null;
     }
   }
 
-  // 移动逻辑
-  moveSnake(): void {
-    if (this.isGameOver) return;
-
-    const head: Point = { x: this.snake[0].x + this.dir.x, y: this.snake[0].y + this.dir.y };
-
-    // 撞墙
-    if (head.x < 0 || head.x >= this.CELL_COUNT || head.y < 0 || head.y >= this.CELL_COUNT) {
-      this.isGameOver = true;
-      this.stopGame();
+  private moveSnake(): void {
+    if (this.isGameOver || this.isPaused || this.snake.length === 0) {
       return;
     }
 
-    // 撞自己
+    this.dir = this.nextDir;
+    const head: Point = {
+      x: this.snake[0].x + this.dir.x,
+      y: this.snake[0].y + this.dir.y
+    };
+
+    if (head.x < 0 || head.x >= this.CELL_COUNT || head.y < 0 || head.y >= this.CELL_COUNT) {
+      this.endGame();
+      return;
+    }
+
     for (let p of this.snake) {
       if (p.x === head.x && p.y === head.y) {
-        this.isGameOver = true;
-        this.stopGame();
+        this.endGame();
         return;
       }
     }
 
     this.snake.unshift(head);
 
-    // 吃食物
     if (head.x === this.food.x && head.y === this.food.y) {
       this.score += 10;
       this.randomFood();
@@ -195,30 +300,39 @@ struct SnakeGame {
     }
   }
 
-  // 随机食物
-  randomFood(): void {
-    let newFood: Point;
-    while (true) {
-      newFood = {
-        x: Math.floor(Math.random() * this.CELL_COUNT),
-        y: Math.floor(Math.random() * this.CELL_COUNT)
-      };
-      let overlap = false;
-      for (let p of this.snake) {
-        if (p.x === newFood.x && p.y === newFood.y) {
-          overlap = true;
-          break;
+  private randomFood(): void {
+    const emptyCells: Point[] = [];
+    for (let x = 0; x < this.CELL_COUNT; x++) {
+      for (let y = 0; y < this.CELL_COUNT; y++) {
+        const occupied = this.snake.some((p: Point) => p.x === x && p.y === y);
+        if (!occupied) {
+          emptyCells.push({ x, y });
         }
       }
-      if (!overlap) break;
     }
-    this.food = newFood;
+
+    if (emptyCells.length === 0) {
+      this.endGame();
+      return;
+    }
+
+    const index = Math.floor(Math.random() * emptyCells.length);
+    this.food = emptyCells[index];
   }
 
-  // 设置方向（禁止反向）
-  setDirection(x: number, y: number): void {
-    if (this.dir.x === -x && this.dir.y === -y) return;
-    if (this.isGameOver) return;
-    this.dir = { x, y };
+  private setDirection(x: number, y: number): void {
+    if (this.isGameOver || this.isPaused) {
+      return;
+    }
+    if (this.dir.x === -x && this.dir.y === -y) {
+      return;
+    }
+    this.nextDir = { x, y };
+  }
+
+  private endGame(): void {
+    this.isGameOver = true;
+    this.isPaused = false;
+    this.stopGame();
   }
 }

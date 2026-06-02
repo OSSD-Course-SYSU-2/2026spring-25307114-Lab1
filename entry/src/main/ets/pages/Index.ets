@@ -3,6 +3,18 @@ interface Point {
   y: number;
 }
 
+interface SnakeGameSnapshot {
+  snake: Point[];
+  food: Point;
+  dir: Point;
+  nextDir: Point;
+  isGameOver: boolean;
+  isPaused: boolean;
+  score: number;
+}
+
+const SNAKE_GAME_STATE_KEY = 'snake_game_state';
+
 @Entry
 @Component
 struct SnakeGame {
@@ -17,6 +29,7 @@ struct SnakeGame {
   @State isGameOver: boolean = false;
   @State isPaused: boolean = false;
   @State score: number = 0;
+  @State lastEatTip: string = '';
 
   private gameTimer: number | null = null;
   private context: CanvasRenderingContext2D = new CanvasRenderingContext2D();
@@ -43,7 +56,8 @@ struct SnakeGame {
       }
     })
     .onAppear(() => {
-      if (this.snake.length === 0) {
+      const restored = this.restoreGameState();
+      if (!restored && this.snake.length === 0) {
         this.initGame();
       } else if (!this.isGameOver && !this.isPaused) {
         this.startGame();
@@ -62,32 +76,55 @@ struct SnakeGame {
         .fontColor('#162033')
 
       Row() {
-        this.InfoBlock('分数', `${this.score}`)
-        this.InfoBlock('速度', `${this.SPEED}ms`)
-        this.InfoBlock('状态', this.statusText())
+        Column({ space: 4 }) {
+          Text('分数')
+            .fontSize(12)
+            .fontColor('#6C778A')
+          Text(`${this.score}`)
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#1677FF')
+        }
+        .width('31%')
+        .height(56)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(Color.White)
+        .borderRadius(8)
+
+        Column({ space: 4 }) {
+          Text('速度')
+            .fontSize(12)
+            .fontColor('#6C778A')
+          Text(`${this.SPEED}ms`)
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#1677FF')
+        }
+        .width('31%')
+        .height(56)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(Color.White)
+        .borderRadius(8)
+
+        Column({ space: 4 }) {
+          Text('状态')
+            .fontSize(12)
+            .fontColor('#6C778A')
+          Text(this.statusText())
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#1677FF')
+        }
+        .width('31%')
+        .height(56)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(Color.White)
+        .borderRadius(8)
       }
       .width('100%')
       .justifyContent(FlexAlign.SpaceBetween)
     }
     .width('100%')
-  }
-
-  @Builder
-  private InfoBlock(label: string, value: string) {
-    Column({ space: 4 }) {
-      Text(label)
-        .fontSize(12)
-        .fontColor('#6C778A')
-      Text(value)
-        .fontSize(18)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#1677FF')
-    }
-    .width('31%')
-    .height(56)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(Color.White)
-    .borderRadius(8)
   }
 
   @Builder
@@ -170,6 +207,9 @@ struct SnakeGame {
   }
 
   private statusText(): string {
+    if (this.lastEatTip.length > 0) {
+      return this.lastEatTip;
+    }
     if (this.isGameOver) {
       return '结束';
     }
@@ -233,6 +273,7 @@ struct SnakeGame {
     this.isPaused = false;
     this.randomFood();
     this.drawGame();
+    this.saveGameState();
     this.startGame();
   }
 
@@ -250,6 +291,7 @@ struct SnakeGame {
     }
     this.isPaused = true;
     this.stopGame();
+    this.saveGameState();
   }
 
   private resumeGame(): void {
@@ -257,6 +299,7 @@ struct SnakeGame {
       return;
     }
     this.isPaused = false;
+    this.saveGameState();
     this.startGame();
   }
 
@@ -290,14 +333,16 @@ struct SnakeGame {
       }
     }
 
-    this.snake.unshift(head);
-
     if (head.x === this.food.x && head.y === this.food.y) {
-      this.score += 10;
+      this.snake = [head, ...this.snake];
+      this.score = this.score + 10;
+      this.lastEatTip = '+10';
       this.randomFood();
     } else {
-      this.snake.pop();
+      this.snake = [head, ...this.snake.slice(0, this.snake.length - 1)];
+      this.lastEatTip = '';
     }
+    this.saveGameState();
   }
 
   private randomFood(): void {
@@ -328,11 +373,52 @@ struct SnakeGame {
       return;
     }
     this.nextDir = { x, y };
+    this.saveGameState();
   }
 
   private endGame(): void {
     this.isGameOver = true;
     this.isPaused = false;
     this.stopGame();
+    this.saveGameState();
+  }
+
+  private saveGameState(): void {
+    const snapshot: SnakeGameSnapshot = {
+      snake: this.snake,
+      food: this.food,
+      dir: this.dir,
+      nextDir: this.nextDir,
+      isGameOver: this.isGameOver,
+      isPaused: this.isPaused,
+      score: this.score
+    };
+    AppStorage.setOrCreate<string>(SNAKE_GAME_STATE_KEY, JSON.stringify(snapshot));
+  }
+
+  private restoreGameState(): boolean {
+    const rawState = AppStorage.get<string>(SNAKE_GAME_STATE_KEY);
+    if (!rawState) {
+      return false;
+    }
+
+    try {
+      const snapshot: SnakeGameSnapshot = JSON.parse(rawState) as SnakeGameSnapshot;
+      if (!snapshot.snake || snapshot.snake.length === 0) {
+        return false;
+      }
+
+      this.snake = snapshot.snake;
+      this.food = snapshot.food;
+      this.dir = snapshot.dir;
+      this.nextDir = snapshot.nextDir;
+      this.isGameOver = snapshot.isGameOver;
+      this.isPaused = snapshot.isPaused;
+      this.score = snapshot.score;
+      return true;
+    } catch (err) {
+      AppStorage.setOrCreate<string>(SNAKE_GAME_STATE_KEY, '');
+      return false;
+    }
   }
 }

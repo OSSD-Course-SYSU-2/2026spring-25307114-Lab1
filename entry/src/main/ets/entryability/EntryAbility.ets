@@ -1,6 +1,14 @@
-import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import {
+  abilityAccessCtrl,
+  AbilityConstant,
+  ConfigurationConstant,
+  Permissions,
+  UIAbility,
+  Want
+} from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { multiDeviceSync } from '../common/MultiDeviceSync';
 
 const DOMAIN = 0x0000;
 const SNAKE_GAME_STATE_KEY = 'snake_game_state';
@@ -8,6 +16,7 @@ const SNAKE_GAME_STATE_KEY = 'snake_game_state';
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     this.restoreSnakeGameState(want);
+    this.prepareMultiDeviceSync();
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
@@ -69,6 +78,23 @@ export default class EntryAbility extends UIAbility {
     const snakeGameState = params[SNAKE_GAME_STATE_KEY];
     if (typeof snakeGameState === 'string' && snakeGameState.length > 0) {
       AppStorage.setOrCreate<string>(SNAKE_GAME_STATE_KEY, snakeGameState);
+    }
+  }
+
+  private async prepareMultiDeviceSync(): Promise<void> {
+    try {
+      const atManager = abilityAccessCtrl.createAtManager();
+      const permissions: Array<Permissions> = [
+        'ohos.permission.DISTRIBUTED_DATASYNC'
+      ];
+      const result = await atManager.requestPermissionsFromUser(this.context, permissions);
+      if (result.authResults[0] !== 0) {
+        hilog.warn(DOMAIN, 'multiDevice', '%{public}s', 'Distributed data sync permission was denied.');
+        return;
+      }
+      await multiDeviceSync.init(this.context);
+    } catch (err) {
+      hilog.error(DOMAIN, 'multiDevice', 'Failed to prepare multi-device sync: %{public}s', JSON.stringify(err));
     }
   }
 }

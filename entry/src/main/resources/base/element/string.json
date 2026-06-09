@@ -11,6 +11,10 @@
     {
       "name": "EntryAbility_label",
       "value": "label"
+    },
+    {
+      "name": "distributed_data_sync_reason",
+      "value": "用于在手机和平板之间同步贪吃蛇游戏进度"
     }
   ]
 }

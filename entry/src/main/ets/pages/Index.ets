@@ -1,3 +1,6 @@
+import { promptAction } from '@kit.ArkUI';
+import { multiDeviceSync } from '../common/MultiDeviceSync';
+
 interface Point {
   x: number;
   y: number;
@@ -181,6 +184,22 @@ struct SnakeGame {
           .height(40)
           .backgroundColor('#25324A')
           .onClick(() => this.initGame())
+      }
+
+      Row({ space: 10 }) {
+        Button('同步到多端')
+          .width(112)
+          .height(38)
+          .fontSize(14)
+          .backgroundColor('#1677FF')
+          .onClick(() => this.pushToOtherDevices())
+
+        Button('读取多端进度')
+          .width(112)
+          .height(38)
+          .fontSize(14)
+          .backgroundColor('#38A169')
+          .onClick(() => this.pullFromOtherDevices())
       }
 
       Column({ space: 6 }) {
@@ -394,6 +413,44 @@ struct SnakeGame {
       score: this.score
     };
     AppStorage.setOrCreate<string>(SNAKE_GAME_STATE_KEY, JSON.stringify(snapshot));
+  }
+
+  private async pushToOtherDevices(): Promise<void> {
+    this.pauseGame();
+    const state = AppStorage.get<string>(SNAKE_GAME_STATE_KEY);
+    if (!state) {
+      promptAction.showToast({ message: '当前没有可同步的游戏进度' });
+      return;
+    }
+
+    try {
+      await multiDeviceSync.pushGameState(state);
+      promptAction.showToast({ message: '当前局面已同步到多端' });
+    } catch (err) {
+      promptAction.showToast({ message: '同步失败，请检查多设备连接' });
+    }
+  }
+
+  private async pullFromOtherDevices(): Promise<void> {
+    try {
+      const state = await multiDeviceSync.pullGameState();
+      if (!state) {
+        promptAction.showToast({ message: '暂未读取到其他设备的进度' });
+        return;
+      }
+
+      AppStorage.setOrCreate<string>(SNAKE_GAME_STATE_KEY, state);
+      if (!this.restoreGameState()) {
+        promptAction.showToast({ message: '同步进度格式无效' });
+        return;
+      }
+
+      this.stopGame();
+      this.drawGame();
+      promptAction.showToast({ message: '已读取多端游戏进度' });
+    } catch (err) {
+      promptAction.showToast({ message: '读取失败，请稍后重试' });
+    }
   }
 
   private restoreGameState(): boolean {
